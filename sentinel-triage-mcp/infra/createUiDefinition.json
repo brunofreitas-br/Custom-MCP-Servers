@@ -1,0 +1,29 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2021-09-09/uiFormDefinition.schema.json",
+  "view": {
+    "kind": "Form",
+    "properties": {
+      "title": "Deploy Sentinel Triage MCP Server",
+      "steps": [
+        {
+          "name": "basics",
+          "label": "Basics",
+          "elements": [
+            {
+              "name": "resourceScope",
+              "type": "Microsoft.Common.ResourceScope",
+              "location": { "resourceTypes": ["Microsoft.App/containerApps"] }
+            },
+            {
+              "name": "containerAppName",
+              "type": "Microsoft.Common.TextBox",
+              "label": "Container App Name",
+              "defaultValue": "sentinel-triage-mcp",
+              "constraints": { "required": true }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

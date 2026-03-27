@@ -1,0 +1,21 @@
+{
+  "name": "sentinel-triage-mcp",
+  "version": "1.0.0",
+  "description": "MCP Server proxy for Microsoft Sentinel Triage & Hunting — enables Copilot Studio integration",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "dev": "tsc --watch & node --watch dist/server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.6",
+    "express": "^4.21.0"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0"
+  }
+}

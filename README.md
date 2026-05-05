@@ -30,6 +30,22 @@ This repo provides custom MCP servers that call the **same underlying APIs** (Mi
 | Server | Description | Tools | Status |
 |--------|-------------|-------|--------|
 | [sentinel-triage-mcp](./sentinel-triage-mcp/) | Incident triage & threat hunting via Microsoft Graph Security API | 7 | ✅ Production |
+| [response-actions-mcp](./response-actions-mcp/) | SOC response actions (containment & remediation) via Microsoft Graph and Defender for Endpoint APIs | 10 | ✅ Production |
+
+### sentinel-triage-mcp
+
+Read-only triage and threat hunting. Lists incidents, inspects alerts, runs KQL hunting queries against Microsoft Sentinel — all via the Microsoft Graph Security API.
+
+### response-actions-mcp
+
+Write actions for containment and remediation. Companion to `sentinel-triage-mcp` — after triaging an incident, use this server to take action.
+
+Exposes **two separate MCP endpoints** to support the two different OAuth scopes required by Copilot Studio:
+
+| Endpoint | API | Tools | Permissions (Delegated) |
+|----------|-----|-------|------------------------|
+| `/mcp/identity` | Microsoft Graph | `block_user`, `unblock_user`, `revoke_sessions`, `reset_user_password` | `User.ReadWrite.All`, `User.RevokeSessions.All` |
+| `/mcp/devices` | Defender for Endpoint | `isolate_device`, `unisolate_device`, `run_antivirus_scan`, `restrict_app_execution`, `unrestrict_app_execution`, `collect_investigation_package` | `Machine.Isolate`, `Machine.Scan`, `Machine.RestrictExecution`, `Machine.CollectForensics` |
 
 ## Planned Servers
 
@@ -37,8 +53,6 @@ As Microsoft evolves its MCP support, gaps may emerge in other areas. Potential 
 
 | Server | Description | Status |
 |--------|-------------|--------|
-| `defender-endpoint-mcp` | Device management, file analysis, IOCs, automated investigations via Defender for Endpoint API | 🔜 Planned |
-| `sentinel-response-mcp` | Response actions — device isolation, IOC blocking, user disabling | 💡 Idea |
 | `entra-identity-mcp` | Identity investigation — risky users, sign-in logs, conditional access | 💡 Idea |
 
 ## Architecture
@@ -76,7 +90,7 @@ Each server has its own README with detailed setup instructions. The general flo
 3. **Add the MCP tool** to your Copilot Studio agent with OAuth 2.0
 4. **Start prompting** — triage incidents, hunt for threats, investigate alerts
 
-See the [sentinel-triage-mcp README](./sentinel-triage-mcp/README.md) for the full step-by-step guide.
+See the [sentinel-triage-mcp README](./sentinel-triage-mcp/README.md) and the [response-actions-mcp README](./response-actions-mcp/README.md) for full step-by-step guides.
 
 ## Contributing
 

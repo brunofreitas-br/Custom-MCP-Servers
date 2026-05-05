@@ -1,0 +1,22 @@
+{
+  "name": "response-actions-mcp",
+  "version": "1.0.0",
+  "description": "Stateless MCP server for SOC response actions (block user, isolate device, revoke sessions, etc.) via Microsoft Graph and Defender APIs with token passthrough.",
+  "main": "dist/server.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "dev": "tsc && node dist/server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

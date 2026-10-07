@@ -26,7 +26,7 @@ const SERVER_INFO: Record<ToolCollection, { name: string; description: string }>
   },
   devices: {
     name: "SOC Response — Devices",
-    description: "Device response actions (isolate, AV scan, restrict apps, collect forensics) via Defender for Endpoint API",
+    description: "Device response actions, file quarantine, and indicator blocking via Defender for Endpoint API",
   },
 };
 

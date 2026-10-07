@@ -29,12 +29,12 @@ This repo provides custom MCP servers that call the **same underlying APIs** (Mi
 
 | Server | Description | Tools | Status |
 |--------|-------------|-------|--------|
-| [sentinel-triage-mcp](./sentinel-triage-mcp/) | Incident triage & threat hunting via Microsoft Graph Security API | 7 | ✅ Production |
-| [response-actions-mcp](./response-actions-mcp/) | SOC response actions (containment & remediation) via Microsoft Graph and Defender for Endpoint APIs | 10 | ✅ Production |
+| [sentinel-triage-mcp](./sentinel-triage-mcp/) | Incident triage, alert/incident updates & threat hunting via Microsoft Graph Security API | 9 | ✅ Production |
+| [response-actions-mcp](./response-actions-mcp/) | SOC response actions, indicator blocking & file quarantine via Microsoft Graph and Defender for Endpoint APIs | 12 | ✅ Production |
 
 ### sentinel-triage-mcp
 
-Read-only triage and threat hunting. Lists incidents, inspects alerts, runs KQL hunting queries against Microsoft Sentinel — all via the Microsoft Graph Security API.
+Incident triage, management, and threat hunting via Microsoft Graph Security API. Lists incidents, inspects alerts, runs KQL hunting queries, and updates or closes incidents and alerts. Updates require the delegated `SecurityIncident.ReadWrite.All` or `SecurityAlert.ReadWrite.All` permission; existing read-only permissions remain sufficient for reading.
 
 ### response-actions-mcp
 
@@ -45,7 +45,9 @@ Exposes **two separate MCP endpoints** to support the two different OAuth scopes
 | Endpoint | API | Tools | Permissions (Delegated) |
 |----------|-----|-------|------------------------|
 | `/mcp/identity` | Microsoft Graph | `block_user`, `unblock_user`, `revoke_sessions`, `reset_user_password` | `User.ReadWrite.All`, `User.RevokeSessions.All` |
-| `/mcp/devices` | Defender for Endpoint | `isolate_device`, `unisolate_device`, `run_antivirus_scan`, `restrict_app_execution`, `unrestrict_app_execution`, `collect_investigation_package` | `Machine.Isolate`, `Machine.Scan`, `Machine.RestrictExecution`, `Machine.CollectForensics` |
+| `/mcp/devices` | Defender for Endpoint | `isolate_device`, `unisolate_device`, `run_antivirus_scan`, `restrict_app_execution`, `unrestrict_app_execution`, `collect_investigation_package`, `block_indicator`, `stop_and_quarantine_file` | `Machine.Isolate`, `Machine.Scan`, `Machine.RestrictExecution`, `Machine.CollectForensics`, `Ti.ReadWrite`, `Machine.StopAndQuarantine` |
+
+Indicator blocking supports URLs, domains, IP addresses, file hashes, and certificate thumbprints. Every call must explicitly choose device groups or all devices in the tenant. File removal uses Defender's native stop-and-quarantine action on a device and SHA-1 hash, not permanent deletion by file path. Both actions return the Defender resource for tracking; submission does not imply completed enforcement.
 
 ## Planned Servers
 
@@ -91,6 +93,17 @@ Each server has its own README with detailed setup instructions. The general flo
 4. **Start prompting** — triage incidents, hunt for threats, investigate alerts
 
 See the [sentinel-triage-mcp README](./sentinel-triage-mcp/README.md) and the [response-actions-mcp README](./response-actions-mcp/README.md) for full step-by-step guides.
+
+For an existing deployment, redeploy the updated image, grant admin consent for the new delegated permissions, reconnect the affected OAuth connections, and refresh the MCP tools in the client. The existing endpoint URLs are unchanged.
+
+## Tests
+
+```bash
+npm --prefix sentinel-triage-mcp test
+npm --prefix response-actions-mcp test
+```
+
+Each command compiles TypeScript and runs Node's built-in test runner. Tests cover payloads, validation, token handling, existing tools, and local HTTP MCP endpoints with mocked downstream APIs. No tenant actions are executed. Docker builds also run these tests before producing the runtime image.
 
 ## Contributing
 

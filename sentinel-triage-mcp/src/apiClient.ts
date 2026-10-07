@@ -24,7 +24,7 @@ function getUserToken(): string {
 async function httpRequest(
   url: string,
   token: string,
-  method: 'GET' | 'POST' = 'GET',
+  method: 'GET' | 'POST' | 'PATCH' = 'GET',
   body?: unknown,
 ): Promise<unknown> {
   const res = await fetch(url, {
@@ -62,4 +62,8 @@ export async function graphGet(path: string, params?: Record<string, string | un
 
 export async function graphPost(path: string, body: unknown): Promise<unknown> {
   return httpRequest(buildUrl(path), getUserToken(), 'POST', body);
+}
+
+export async function graphPatch(path: string, body: unknown): Promise<unknown> {
+  return httpRequest(buildUrl(path), getUserToken(), 'PATCH', body);
 }

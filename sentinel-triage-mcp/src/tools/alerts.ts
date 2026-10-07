@@ -1,5 +1,20 @@
 import { registerTool } from '../toolRegistry.js';
-import { graphGet } from '../apiClient.js';
+import { graphGet, graphPatch } from '../apiClient.js';
+import { buildUpdate, commonUpdateProperties, type UpdateProperty } from '../updateValidation.js';
+
+const alertUpdateProperties: Record<string, UpdateProperty> = {
+  ...commonUpdateProperties,
+  status: {
+    type: 'string',
+    enum: ['new', 'inProgress', 'resolved'],
+    description: 'Set to resolved to close the alert, or inProgress to resume investigation',
+  },
+  customDetails: {
+    type: 'object',
+    additionalProperties: { type: 'string' },
+    description: 'User-defined custom fields with string values',
+  },
+};
 
 export function registerAlertTools() {
   registerTool({
@@ -44,6 +59,25 @@ export function registerAlertTools() {
     },
     handler: async (params) => {
       return graphGet(`/security/alerts_v2/${encodeURIComponent(params.alertId as string)}`);
+    },
+  });
+
+  registerTool({
+    name: 'UpdateAlert',
+    description: 'Update a security alert, including closing it with status resolved. Only supplied fields are sent to Microsoft Graph; classification and determination are never inferred. Requires SecurityAlert.ReadWrite.All',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        alertId: { type: 'string', minLength: 1, description: 'Unique identifier of the alert' },
+        ...alertUpdateProperties,
+      },
+      required: ['alertId'],
+      minProperties: 2,
+      additionalProperties: false,
+    },
+    handler: async (params) => {
+      const { id, body } = buildUpdate(params, 'alertId', alertUpdateProperties);
+      return graphPatch(`/security/alerts_v2/${encodeURIComponent(id)}`, body);
     },
   });
 }

@@ -1,5 +1,6 @@
 import { registerTool } from "../toolRegistry.js";
 import { apiRequest } from "../apiClient.js";
+import { requireHex, requireString, validateArguments } from "../validation.js";
 
 // ── Isolate Device ──────────────────────────────────────────────────────────
 registerTool({
@@ -244,6 +245,59 @@ registerTool({
       timestamp: ts,
       result: "SUCCESS",
       message: `Investigation package requested for device ${machineId}. Available in Defender portal when ready.`,
+    };
+  },
+});
+
+registerTool({
+  name: "stop_and_quarantine_file",
+  collection: "devices",
+  description:
+    "Stop execution and quarantine a file on a specific Windows device using its SHA-1 hash. This is Defender quarantine, not permanent deletion by file path. Returns the asynchronous machine action for tracking. Requires Machine.StopAndQuarantine",
+  inputSchema: {
+    type: "object",
+    properties: {
+      machineId: { type: "string", minLength: 1, description: "Defender for Endpoint machine ID" },
+      sha1: { type: "string", pattern: "^[a-fA-F0-9]{40}$", description: "SHA-1 hash of the file to stop and quarantine" },
+      incidentId: { type: "string", minLength: 1, description: "Incident ID included in the action comment for audit" },
+      comment: { type: "string", minLength: 1, description: "Optional reason for the quarantine request" },
+    },
+    required: ["machineId", "sha1", "incidentId"],
+    additionalProperties: false,
+  },
+  handler: async (args, token) => {
+    validateArguments(args, ["machineId", "sha1", "incidentId", "comment"]);
+    const machineId = requireString(args.machineId, "machineId");
+    const sha1 = requireHex(args.sha1, 40, "sha1");
+    const incidentId = requireString(args.incidentId, "incidentId");
+    const comment = args.comment === undefined ? undefined : requireString(args.comment, "comment");
+    const timestamp = new Date().toISOString();
+
+    const machineAction = await apiRequest({
+      base: "defender",
+      method: "POST",
+      path: `/machines/${encodeURIComponent(machineId)}/StopAndQuarantineFile`,
+      body: {
+        Sha1: sha1,
+        Comment: `Stop and quarantine file - Incident ${incidentId} - ${timestamp}${comment ? ` - ${comment}` : ""}`,
+      },
+      token,
+    });
+    if (typeof machineAction !== "object" || machineAction === null ||
+        !("id" in machineAction) || typeof machineAction.id !== "string" || machineAction.id.trim().length === 0 ||
+        !("status" in machineAction) || typeof machineAction.status !== "string" || machineAction.status.trim().length === 0) {
+      throw new Error("Defender returned an invalid machine action response. Check the Action center before retrying.");
+    }
+
+    return {
+      action: "stop_and_quarantine_file",
+      target: machineId,
+      sha1,
+      incidentId,
+      timestamp,
+      result: "REQUESTED",
+      message: "Stop and quarantine requested. Track the returned machine action in Defender Action center; completion is not implied.",
+      machineAction,
     };
   },
 });

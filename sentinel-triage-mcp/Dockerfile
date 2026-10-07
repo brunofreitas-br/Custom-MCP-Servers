@@ -4,7 +4,8 @@ COPY package*.json ./
 RUN npm ci
 COPY tsconfig.json ./
 COPY src/ ./src/
-RUN npm run build
+COPY test/ ./test/
+RUN npm test
 
 FROM node:20-slim
 WORKDIR /app

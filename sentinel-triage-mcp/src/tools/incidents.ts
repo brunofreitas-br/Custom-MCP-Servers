@@ -1,5 +1,29 @@
 import { registerTool } from '../toolRegistry.js';
-import { graphGet } from '../apiClient.js';
+import { graphGet, graphPatch } from '../apiClient.js';
+import { buildUpdate, commonUpdateProperties, type UpdateProperty } from '../updateValidation.js';
+
+const incidentUpdateProperties: Record<string, UpdateProperty> = {
+  ...commonUpdateProperties,
+  status: {
+    type: 'string',
+    enum: ['active', 'resolved', 'redirected'],
+    description: 'Set to resolved to close the incident, or active to reopen it',
+  },
+  severity: {
+    type: 'string',
+    enum: ['unknown', 'informational', 'low', 'medium', 'high'],
+    description: 'Incident severity',
+  },
+  displayName: { type: 'string', minLength: 1, description: 'Incident name' },
+  description: { type: 'string', description: 'Incident description' },
+  summary: { type: 'string', description: 'Overview of the attack' },
+  resolvingComment: { type: 'string', description: 'Explanation of the resolution and classification choice' },
+  customTags: {
+    type: 'array',
+    items: { type: 'string', minLength: 1 },
+    description: 'Custom tags to set. An empty array clears the tags',
+  },
+};
 
 export function registerIncidentTools() {
   registerTool({
@@ -59,6 +83,25 @@ export function registerIncidentTools() {
       const queryParams: Record<string, string | undefined> = {};
       if (params.includeAlertsData) queryParams['$expand'] = 'alerts';
       return graphGet(`/security/incidents/${encodeURIComponent(params.incidentId as string)}`, queryParams);
+    },
+  });
+
+  registerTool({
+    name: 'UpdateIncident',
+    description: 'Update a security incident, including closing it with status resolved. Only supplied fields are sent to Microsoft Graph; classification and determination are never inferred. Requires SecurityIncident.ReadWrite.All',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        incidentId: { type: 'string', minLength: 1, description: 'Unique identifier of the incident' },
+        ...incidentUpdateProperties,
+      },
+      required: ['incidentId'],
+      minProperties: 2,
+      additionalProperties: false,
+    },
+    handler: async (params) => {
+      const { id, body } = buildUpdate(params, 'incidentId', incidentUpdateProperties);
+      return graphPatch(`/security/incidents/${encodeURIComponent(id)}`, body);
     },
   });
 }

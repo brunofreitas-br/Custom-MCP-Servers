@@ -1,6 +1,6 @@
 import { registerTool } from '../toolRegistry.js';
-import { graphGet, graphPatch } from '../apiClient.js';
 import { buildUpdate, commonUpdateProperties, type UpdateProperty } from '../updateValidation.js';
+import { getIncidentWithCases, listIncidentsWithCases, updateIncidentWithCases } from '../caseManagement.js';
 
 const incidentUpdateProperties: Record<string, UpdateProperty> = {
   ...commonUpdateProperties,
@@ -28,7 +28,7 @@ const incidentUpdateProperties: Record<string, UpdateProperty> = {
 export function registerIncidentTools() {
   registerTool({
     name: 'ListIncidents',
-    description: 'List security incidents and filter by date range, severity, status, assigned analyst, and investigation state',
+    description: 'List security incidents using Graph beta incident cases first, with the existing v1.0 incident API as fallback on no first-page matches or 404. Preserves legacy queries not supported by Cases. Case IDs and incident IDs remain distinct',
     inputSchema: {
       type: 'object',
       properties: {
@@ -64,13 +64,13 @@ export function registerIncidentTools() {
       if (params.includeAlertsData) queryParams['$expand'] = 'alerts';
       if (params.search) queryParams['$search'] = `"${params.search}"`;
 
-      return graphGet('/security/incidents', queryParams);
+      return listIncidentsWithCases(params, queryParams);
     },
   });
 
   registerTool({
     name: 'GetIncidentById',
-    description: 'Retrieve a security incident by ID, including properties, correlated alerts, and metadata',
+    description: 'Retrieve an incident by its Incident ID using Graph beta Cases first, with v1.0 incidents fallback on no match or 404. Returns the separate Case ID when available. For a Case ID use GetCaseById or ResolveCaseReference',
     inputSchema: {
       type: 'object',
       properties: {
@@ -80,15 +80,13 @@ export function registerIncidentTools() {
       required: ['incidentId'],
     },
     handler: async (params) => {
-      const queryParams: Record<string, string | undefined> = {};
-      if (params.includeAlertsData) queryParams['$expand'] = 'alerts';
-      return graphGet(`/security/incidents/${encodeURIComponent(params.incidentId as string)}`, queryParams);
+      return getIncidentWithCases(params.incidentId as string, params.includeAlertsData === true);
     },
   });
 
   registerTool({
     name: 'UpdateIncident',
-    description: 'Update a security incident, including closing it with status resolved. Only supplied fields are sent to Microsoft Graph; classification and determination are never inferred. Requires SecurityIncident.ReadWrite.All',
+    description: 'Update or close an incident using Cases first, with v1.0 incidents fallback on no match or 404. Legacy-only fields are sent as one complete legacy PATCH. Cases 202 means accepted, not completed, and is never retried through incidents. Requires CaseManagement.ReadWrite.All and SecurityIncident.ReadWrite.All for fallback',
     inputSchema: {
       type: 'object',
       properties: {
@@ -101,7 +99,7 @@ export function registerIncidentTools() {
     },
     handler: async (params) => {
       const { id, body } = buildUpdate(params, 'incidentId', incidentUpdateProperties);
-      return graphPatch(`/security/incidents/${encodeURIComponent(id)}`, body);
+      return updateIncidentWithCases(id, body);
     },
   });
 }

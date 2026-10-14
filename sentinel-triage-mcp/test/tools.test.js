@@ -7,6 +7,7 @@ import { getTool, listTools } from '../dist/toolRegistry.js';
 import { registerAllTools } from '../dist/tools/index.js';
 
 registerAllTools();
+process.env.CASE_MANAGEMENT_ENABLED = 'false';
 
 function mockGraph(t, result = {}, status = 200) {
   const requests = [];
@@ -29,7 +30,7 @@ async function invoke(name, args, token = 'triage-test-token') {
   return userTokenStore.run(token, () => tool.handler(args));
 }
 
-test('discovery preserves the seven existing tools and adds two updates', () => {
+test('discovery preserves existing tools and adds the Cases tools', () => {
   assert.deepEqual(listTools().map((tool) => tool.name).sort(), [
     'FetchAdvancedHuntingTablesDetailedSchema',
     'FetchAdvancedHuntingTablesOverview',
@@ -40,6 +41,11 @@ test('discovery preserves the seven existing tools and adds two updates', () => 
     'RunAdvancedHuntingQuery',
     'UpdateAlert',
     'UpdateIncident',
+    'ListCases',
+    'GetCaseById',
+    'ResolveCaseReference',
+    'ListCaseStatuses',
+    'UpdateCase',
   ].sort());
   for (const name of ['UpdateIncident', 'UpdateAlert']) {
     const schema = getTool(name).inputSchema;
@@ -219,9 +225,10 @@ test('HTTP MCP exposes and executes both update tools with standard success and 
   }
 
   const health = await (await clientFetch(`${base}/health`)).json();
-  assert.equal(health.tools, 9);
+  assert.equal(health.tools, 14);
+  assert.equal(health.incidentStrategy, 'incidents-only');
   assert.equal((await rpc('initialize')).result.protocolVersion, '2024-11-05');
-  assert.equal((await rpc('tools/list')).result.tools.length, 9);
+  assert.equal((await rpc('tools/list')).result.tools.length, 14);
   for (const [name, idField] of [['UpdateIncident', 'incidentId'], ['UpdateAlert', 'alertId']]) {
     const response = await rpc('tools/call', { name, arguments: { [idField]: '1', status: 'resolved' } });
     assert.equal(response.jsonrpc, '2.0');

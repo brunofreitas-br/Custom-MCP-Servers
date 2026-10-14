@@ -3,11 +3,13 @@ import cors from 'cors';
 import { registerAllTools } from './tools/index.js';
 import { listTools, getTool } from './toolRegistry.js';
 import { userTokenStore } from './apiClient.js';
+import { caseManagementEnabled, CaseEnrichmentError } from './caseManagement.js';
 
 const PORT = Number(process.env.PORT) || 3000;
 const SERVER_NAME = 'sentinel-triage-proxy';
 const SERVER_VERSION = '2.0.0';
 const PROTOCOL_VERSION = '2024-11-05';
+const CASE_MANAGEMENT_ENABLED = caseManagementEnabled();
 
 // ── Register all tools at startup ────────────────────────────────
 registerAllTools();
@@ -98,7 +100,12 @@ async function handleMessage(msg: JsonRpcRequest): Promise<JsonRpcResponse | nul
           jsonrpc: '2.0',
           id: msg.id,
           result: {
-            content: [{ type: 'text', text: `Error: ${errMsg}` }],
+            content: [{
+              type: 'text',
+              text: err instanceof CaseEnrichmentError
+                ? JSON.stringify({ error: errMsg, partialResult: err.partialResult }, null, 2)
+                : `Error: ${errMsg}`,
+            }],
             isError: true,
           },
         };
@@ -125,7 +132,14 @@ app.use(express.json({ limit: '4mb' }));
 
 // Health check
 app.get('/health', (_req, res) => {
-  res.json({ status: 'ok', tools: listTools().length, version: SERVER_VERSION, authMode: 'token-passthrough' });
+  res.json({
+    status: 'ok',
+    tools: listTools().length,
+    version: SERVER_VERSION,
+    authMode: 'token-passthrough',
+    incidentStrategy: CASE_MANAGEMENT_ENABLED ? 'cases-first' : 'incidents-only',
+    caseManagementPreview: CASE_MANAGEMENT_ENABLED,
+  });
 });
 
 // ── MCP endpoint — fully stateless JSON-RPC ──────────────────────
@@ -166,4 +180,6 @@ app.listen(PORT, () => {
   console.log(`  Health check: http://localhost:${PORT}/health`);
   console.log(`  Tools: ${listTools().length}`);
   console.log(`  Mode: stateless token-passthrough (no sessions, no credentials)`);
+  console.log(`  Incidents: ${CASE_MANAGEMENT_ENABLED ? 'Cases beta first; v1.0 incidents fallback' : 'v1.0 incidents only'}`);
+  if (CASE_MANAGEMENT_ENABLED) console.warn('  Case Management uses Microsoft Graph beta; production use is not supported by Microsoft.');
 });

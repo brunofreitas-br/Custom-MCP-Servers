@@ -29,12 +29,16 @@ This repo provides custom MCP servers that call the **same underlying APIs** (Mi
 
 | Server | Description | Tools | Status |
 |--------|-------------|-------|--------|
-| [sentinel-triage-mcp](./sentinel-triage-mcp/) | Incident triage, alert/incident updates & threat hunting via Microsoft Graph Security API | 9 | ✅ Production |
+| [sentinel-triage-mcp](./sentinel-triage-mcp/) | Cases-first triage, case/incident/alert updates & threat hunting via Microsoft Graph Security API | 14 | Stable v1.0 APIs + Cases beta |
 | [response-actions-mcp](./response-actions-mcp/) | SOC response actions, indicator blocking & file quarantine via Microsoft Graph and Defender for Endpoint APIs | 12 | ✅ Production |
 
 ### sentinel-triage-mcp
 
-Incident triage, management, and threat hunting via Microsoft Graph Security API. Lists incidents, inspects alerts, runs KQL hunting queries, and updates or closes incidents and alerts. Updates require the delegated `SecurityIncident.ReadWrite.All` or `SecurityAlert.ReadWrite.All` permission; existing read-only permissions remain sufficient for reading.
+Cases-first incident triage, management, and threat hunting via Microsoft Graph Security API. Adds case listing, explicit Case ID/Incident ID resolution, tenant status discovery, and case updates. Existing incident tools prefer `/beta/security/caseManagement/cases`, with `/v1.0/security/incidents` fallback on no matching incident case or HTTP 404. Legacy-only query/update capabilities remain intact; accepted case updates are never replayed.
+
+Cases requires delegated `CaseManagement.Read.All` or `CaseManagement.ReadWrite.All`, in addition to permissions for the existing incident/alert/hunting operations. Both API versions use the same Graph OAuth connection; no OBO or server credentials are added. `CASE_MANAGEMENT_ENABLED=false` restores the original incident implementation and response shapes.
+
+**Preview notice:** Case Management uses Microsoft Graph beta APIs, which Microsoft does not support for production applications. Authentication, permission, throttling, network, and server errors are surfaced instead of hidden by fallback. See the [Cases guide](./sentinel-triage-mcp/README.md#cases-first-triage-preview) for migration, response shapes, and limits.
 
 ### response-actions-mcp
 

@@ -30,7 +30,7 @@ This repo provides custom MCP servers that call the **same underlying APIs** (Mi
 | Server | Description | Tools | Status |
 |--------|-------------|-------|--------|
 | [sentinel-triage-mcp](./sentinel-triage-mcp/) | Cases-first triage, case/incident/alert updates & threat hunting via Microsoft Graph Security API | 14 | Stable v1.0 APIs + Cases beta |
-| [response-actions-mcp](./response-actions-mcp/) | SOC response actions, indicator blocking & file quarantine via Microsoft Graph and Defender for Endpoint APIs | 12 | ✅ Production |
+| [response-actions-mcp](./response-actions-mcp/) | SOC response actions, hostname lookup, action tracking, indicators & file quarantine | 14 | ✅ Production |
 
 ### sentinel-triage-mcp
 
@@ -49,9 +49,13 @@ Exposes **two separate MCP endpoints** to support the two different OAuth scopes
 | Endpoint | API | Tools | Permissions (Delegated) |
 |----------|-----|-------|------------------------|
 | `/mcp/identity` | Microsoft Graph | `block_user`, `unblock_user`, `revoke_sessions`, `reset_user_password` | `User.ReadWrite.All`, `User.RevokeSessions.All` |
-| `/mcp/devices` | Defender for Endpoint | `isolate_device`, `unisolate_device`, `run_antivirus_scan`, `restrict_app_execution`, `unrestrict_app_execution`, `collect_investigation_package`, `block_indicator`, `stop_and_quarantine_file` | `Machine.Isolate`, `Machine.Scan`, `Machine.RestrictExecution`, `Machine.CollectForensics`, `Ti.ReadWrite`, `Machine.StopAndQuarantine` |
+| `/mcp/devices` | Defender for Endpoint | `isolate_device`, `unisolate_device`, `run_antivirus_scan`, `restrict_app_execution`, `unrestrict_app_execution`, `collect_investigation_package`, `block_indicator`, `stop_and_quarantine_file`, `find_machines`, `get_machine_action` | `Machine.Isolate`, `Machine.Scan`, `Machine.RestrictExecution`, `Machine.CollectForensics`, `Ti.ReadWrite`, `Machine.StopAndQuarantine`, `Machine.ReadWrite` (or `Machine.Read` for lookup only) |
 
 Indicator blocking supports URLs, domains, IP addresses, file hashes, and certificate thumbprints. Every call must explicitly choose device groups or all devices in the tenant. File removal uses Defender's native stop-and-quarantine action on a device and SHA-1 hash, not permanent deletion by file path. Both actions return the Defender resource for tracking; submission does not imply completed enforcement.
+
+`find_machines` resolves exact hostnames/FQDNs to accessible MDE devices without selecting an ambiguous target. Device actions now return their actual asynchronous `machineActionId`/status, and `get_machine_action` reads completion without replaying the action. **Compatibility:** device-action `result` is no longer unconditional `SUCCESS`; consumers must handle pending/final/unknown states. Action tracking requires delegated `Machine.ReadWrite`; lookup alone can use `Machine.Read`.
+
+Both servers provide structured API diagnostics with HTTP context and correlation IDs, and clear JSON 404 responses for incorrect MCP routes. These help distinguish permission failures, missing resources, malformed connector URLs, and unconfirmed write outcomes without bypassing authorization or confusing Case/Incident/device IDs. See each server's guide for agent-instruction snippets and error-envelope migration.
 
 ## Planned Servers
 

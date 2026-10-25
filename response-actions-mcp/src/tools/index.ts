@@ -1,3 +1,4 @@
 import "./identity.js";
 import "./devices.js";
 import "./indicators.js";
+import "./deviceLookup.js";

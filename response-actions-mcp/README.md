@@ -26,10 +26,11 @@ az containerapp up \
 
 ## Features
 
-- **12 response tools** — identity actions, device containment, indicator blocking, and file quarantine
+- **14 tools** — identity/device response actions, indicator blocking, file quarantine, hostname lookup, and action tracking
 - **Token passthrough** — zero credentials stored server-side; each user's Bearer token is forwarded directly to Microsoft APIs
 - **Fully stateless** — no sessions, no state, scales to zero on Azure Container Apps
-- **Audit trail** — every action requires an `incidentId` parameter for traceability
+- **Audit trail** — every write action requires an `incidentId` parameter for traceability; read-only lookups don't create actions
+- **Trackable device actions** — scan, isolation, app restrictions, forensics, and quarantine return the Defender action ID and actual status instead of assuming completion
 
 ## Tools
 
@@ -47,15 +48,127 @@ az containerapp up \
 | 10 | `collect_investigation_package` | Collect forensic evidence package | Defender |
 | 11 | `block_indicator` | Block URLs, domains, IPs, file hashes, or certificate thumbprints | Defender |
 | 12 | `stop_and_quarantine_file` | Stop execution and quarantine a file on a device by SHA-1 | Defender |
+| 13 | `find_machines` | Read-only hostname/FQDN lookup returning all matching accessible MDE machines | Defender |
+| 14 | `get_machine_action` | Read the actual status of a previously submitted device action | Defender |
 
 ### MCP endpoints
 
 | Endpoint | Tools | OAuth scope |
 |----------|-------|-------------|
 | `/mcp/identity` | 4 identity actions | `https://graph.microsoft.com/.default` |
-| `/mcp/devices` | 8 Defender actions, including indicators and file quarantine | `https://api.securitycenter.microsoft.com/.default` |
+| `/mcp/devices` | 10 Defender tools, including device lookup and action tracking | `https://api.securitycenter.microsoft.com/.default` |
 
-The two new tools reuse the existing Defender connection. There is no additional endpoint and no change to the identity connection.
+The lookup/tracking tools reuse the existing Defender connection. There is no additional endpoint and no change to the identity connection.
+
+## Finding devices and tracking response actions
+
+Use `find_machines` before remediation when the request supplies only a hostname:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "tools/call",
+  "params": {
+    "name": "find_machines",
+    "arguments": { "hostname": "pc01.contoso.com" }
+  }
+}
+```
+
+- FQDN searches are exact. A short name such as `pc01` matches that exact first DNS label, not `pc010`.
+- The response includes `resolution` (`UNIQUE`, `AMBIGUOUS`, or `NOT_FOUND`), `matchCount`, and `matches`. Each match preserves device metadata and exposes its MDE ID as `machineId`.
+- Continuation pages are followed before declaring uniqueness. Unexpected/repeated continuation URLs or mismatched machine names fail explicitly.
+- No machine is selected automatically. Even a unique visible match must be checked against the intended device, onboarding state, and `lastSeen`.
+- Multiple domains, device re-onboarding, and stale records can yield more than one matching MDE ID. Do not simply choose the first/latest result.
+- Visibility is limited by the caller's RBAC and Defender retention. Empty results don't prove the device doesn't exist; upstream 403/404 responses aren't converted into empty lists.
+- Device actions still require an explicit `machineId`. Use the verified MDE ID (or alert evidence `mdeDeviceId`), not a hostname or an Entra `aadDeviceId`.
+
+`find_machines` requires delegated `Machine.Read` or `Machine.ReadWrite`. It does not request a scan or any other mutation.
+
+After an authorized scan, isolation, restriction, investigation-package, or quarantine request, preserve the returned `machineActionId` and query:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "method": "tools/call",
+  "params": {
+    "name": "get_machine_action",
+    "arguments": { "actionId": "<MACHINE_ACTION_ID>" }
+  }
+}
+```
+
+This GET requires delegated **`Machine.ReadWrite`**, as documented for the native machine-action endpoint, even though this MCP tool itself is read-only. `Machine.Scan` alone does not authorize this status query. The tool does not automatically poll, resubmit, or cancel an action.
+
+### Device-action results and compatibility
+
+**Intentional contract change:** existing device actions no longer return unconditional `result: "SUCCESS"`. Their original target/incident/scope fields are retained, and the response now includes `machineActionId`, `status`, `completed`, `succeeded`, `machineAction` (the original Defender resource), and `nextStep`.
+
+| Defender `status` | MCP `result` | `completed` | `succeeded` |
+|-------------------|--------------|-------------|-------------|
+| `Pending` | `REQUESTED` | false | null |
+| `InProgress` | `IN_PROGRESS` | false | null |
+| `Succeeded` | `SUCCEEDED` | true | true |
+| `Failed` | `FAILED` | true | false |
+| `TimeOut` | `TIMED_OUT` | true | false |
+| `Cancelled` | `CANCELLED` | true | false |
+| Unknown future value | `UNKNOWN` | null | null |
+
+An HTTP success means the API returned a resource, not that remediation succeeded. Report success only when the returned action has `succeeded: true`. Missing/mismatched action responses fail explicitly; they never become completed success. Checking status is a new GET, not a repeat of the original POST.
+
+Identity actions and indicator submission keep their existing result contracts. Case updates in the triage server continue to use their separate `ACCEPTED`/202 contract.
+
+References: [List machines](https://learn.microsoft.com/en-us/defender-endpoint/api/get-machines), [Get MachineAction](https://learn.microsoft.com/en-us/defender-endpoint/api/get-machineaction-object), and [MachineAction statuses](https://learn.microsoft.com/en-us/defender-endpoint/api/machineaction).
+
+## Operational errors and agent behavior
+
+Tool execution failures preserve the existing JSON-RPC error envelope and add structured details under `error.data`:
+
+```json
+{
+  "error": {
+    "code": -32000,
+    "message": "API request failed ...",
+    "data": {
+      "error": "API request failed ...",
+      "diagnostics": {
+        "code": "UPSTREAM_HTTP_ERROR",
+        "tool": "get_machine_action",
+        "target": { "actionId": "..." },
+        "httpStatus": 403,
+        "upstream": {
+          "service": "defender",
+          "method": "GET",
+          "url": "https://api.securitycenter.microsoft.com/api/machineactions/...",
+          "requestId": "...",
+          "clientRequestId": "..."
+        },
+        "automaticRetryAllowed": false,
+        "guidance": ["..."]
+      }
+    }
+  }
+}
+```
+
+HTTP diagnostics retain the upstream error code, request IDs, date and `Retry-After` when available. Network/read/JSON failures have distinct diagnostic codes. Access-token headers aren't serialized, and a token echoed in an upstream error body is redacted.
+
+An unknown MCP route now returns HTTP 404 JSON with `MCP_ENDPOINT_NOT_FOUND` and the expected paths. This is different from a tool's downstream `UPSTREAM_HTTP_ERROR`/404. Check the connection URL before investigating an incident or machine through a connector that can't initialize.
+
+Add these rules to the Orchestrator/Response Agent instructions and refresh the tool catalog after redeploying:
+
+```text
+- Resolve a hostname using find_machines. Never substitute an Entra ID, Case ID or Incident ID for an MDE machine ID.
+- When matches are ambiguous, obtain the intended FQDN/MDE ID; never select the first device automatically.
+- Verify the target and obtain authorization before remediation. Triage remains read-only.
+- Preserve machineActionId. REQUESTED/IN_PROGRESS is not completion. Read progress using get_machine_action; never repeat a POST just to check status.
+- Declare remediation success only for succeeded=true. Report Failed/TimeOut/Cancelled and unknown statuses accurately.
+- Stop the affected operation on 401/403. Do not change tools, fields, IDs or API audiences to bypass it, and do not claim a specific missing role from a 403 alone.
+- Preserve error.data diagnostics and correlation IDs. Do not expose access tokens. Respect Retry-After and the caller's retry policy.
+- A network error after a write leaves its outcome uncertain; check Defender Action center before any retry.
+```
 
 ## Blocking indicators
 
@@ -161,10 +274,12 @@ The API supports Windows 10 version 1703 or later and Windows 11, requires Defen
 - `Machine.CollectForensics` — collect investigation package
 - `Ti.ReadWrite` — submit/update blocking indicators
 - `Machine.StopAndQuarantine` — stop execution and quarantine a file
+- `Machine.ReadWrite` — retrieve machine-action status; also covers machine lookup
+- `Machine.Read` — optional least-privilege alternative for hostname lookup alone, without action tracking
 
 Click **Grant admin consent**.
 
-For an existing deployment, add the two new Defender permissions, grant admin consent, redeploy the updated image, and reconnect the Defender OAuth connection so it obtains a token with the new permissions. Refresh the MCP tool list afterward. The existing URLs remain unchanged.
+For an existing deployment, add delegated `Machine.ReadWrite` for action tracking (or `Machine.Read` for lookup only), grant admin consent, redeploy the updated image, and reconnect the Defender OAuth connection so it obtains a token with the new permissions. Refresh the MCP tool list and update consumers of the old device-action `SUCCESS` response. The existing URLs remain unchanged.
 
 #### Create a client secret
 
@@ -218,7 +333,7 @@ Both connections can use the same App Registration, but must obtain separate tok
 2. Sign in with your Microsoft account
 3. Green checkmark ✅ → Add and configure
 4. Repeat for both connections and register each generated Redirect URI.
-5. The identity connection exposes 4 tools and the Defender connection exposes 8, for 12 tools in total.
+5. The identity connection exposes 4 tools and the Defender connection exposes 10, for 14 tools in total.
 
 ## How It Works
 
@@ -255,6 +370,8 @@ Copilot Studio / Any MCP Client
 | `Machine.CollectForensics` | Delegated | Collect investigation package |
 | `Ti.ReadWrite` | Delegated | Submit/update blocking indicators |
 | `Machine.StopAndQuarantine` | Delegated | Stop and quarantine a file on a device |
+| `Machine.Read` | Delegated | Hostname/FQDN lookup only; optional if Machine.ReadWrite is granted |
+| `Machine.ReadWrite` | Delegated | Retrieve machine-action status and perform machine lookup |
 
 The signed-in user's Entra/Defender RBAC must also authorize the requested operation and device scope; consenting to an OAuth permission does not grant those roles. In particular, quarantine requires **Active remediation actions** and access to the target device. Indicator management requires the tenant's applicable indicator-management permissions.
 
@@ -274,7 +391,7 @@ Automated tests:
 npm test
 ```
 
-This builds the project and runs Node's built-in tests for all indicator types, explicit scope, quarantine, validation, error handling, existing actions, and local HTTP MCP routing. All downstream API calls are mocked, so tests do not change any tenant resources. Docker builds run the same tests.
+This builds the project and runs Node's built-in tests for indicator types, scope, hostname resolution/ambiguity/pagination, device-action states, validation, structured errors, legacy payloads, and local HTTP MCP routing. All downstream API calls are mocked, so tests do not change any tenant resources. Docker builds run the same tests.
 
 Test:
 ```bash
@@ -301,13 +418,16 @@ response-actions-mcp/
 │   ├── apiClient.ts       # Graph/Defender API client with token passthrough
 │   ├── toolRegistry.ts    # Tool registration and lookup
 │   ├── validation.ts      # Validation helpers for new response actions
+│   ├── machineActions.ts  # Shared validation and actual asynchronous action outcomes
 │   └── tools/
 │       ├── index.ts       # Registers all tools
 │       ├── identity.ts    # block_user, unblock_user, revoke_sessions, reset_password
 │       ├── devices.ts     # Device containment, forensics, stop_and_quarantine_file
+│       ├── deviceLookup.ts # find_machines and get_machine_action
 │       └── indicators.ts  # block_indicator with explicit scope
 ├── test/
-│   └── tools.test.js      # Tool contracts, validation, regressions, HTTP MCP
+│   ├── tools.test.js      # Tool contracts, validation, regressions, HTTP MCP
+│   └── operations.test.js # Hostnames, action states, diagnostics, HTTP MCP
 ├── infra/
 │   └── azuredeploy.json   # ARM template for Deploy to Azure button
 ├── Dockerfile

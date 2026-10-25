@@ -520,7 +520,7 @@ test('a successful 200 beta PATCH is validated and returned without another muta
 
 test('a network failure after submitting a beta write does not replay it through incidents', async (t) => {
   mockGraph(t, [lookup(), { path: `${casesPath}/${incidentCase.id}`, method: 'PATCH', error: new TypeError('fetch failed') }]);
-  await assert.rejects(invoke('UpdateIncident', { incidentId: '912751', severity: 'high' }), /fetch failed/);
+  await assert.rejects(invoke('UpdateIncident', { incidentId: '912751', severity: 'high' }), /Network request failed/);
 });
 
 test('generic Cases can update their supported fields without inventing an incident association', async (t) => {

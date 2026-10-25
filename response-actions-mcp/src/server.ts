@@ -1,6 +1,6 @@
 import express from "express";
 import { listTools, getTool, type ToolCollection } from "./toolRegistry.js";
-import { extractToken } from "./apiClient.js";
+import { extractToken, toolErrorDetails } from "./apiClient.js";
 import "./tools/index.js";
 
 const app = express();
@@ -120,7 +120,11 @@ function mcpHandler(collection: ToolCollection) {
       res.json({
         jsonrpc: "2.0",
         id,
-        error: { code: -32000, message },
+        error: {
+          code: -32000,
+          message,
+          data: toolErrorDetails(err, typeof params?.name === "string" ? params.name : method, params?.arguments ?? {}),
+        },
       });
     }
   };
@@ -129,6 +133,13 @@ function mcpHandler(collection: ToolCollection) {
 // ── Mount collection-specific endpoints ─────────────────────────────────────
 app.post("/mcp/identity", mcpHandler("identity"));
 app.post("/mcp/devices", mcpHandler("devices"));
+app.use((_req, res) => {
+  res.status(404).json({
+    error: "MCP_ENDPOINT_NOT_FOUND",
+    message: "Use POST /mcp/identity or POST /mcp/devices for MCP JSON-RPC. No downstream API call was made.",
+    expectedEndpoints: ["/mcp/identity", "/mcp/devices"],
+  });
+});
 
 // ── Start server ────────────────────────────────────────────────────────────
 const PORT = parseInt(process.env.PORT || "3001", 10);

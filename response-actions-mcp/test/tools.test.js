@@ -47,11 +47,11 @@ test("discovery preserves all existing tools and keeps new actions in the Defend
     "block_user", "unblock_user", "revoke_sessions", "reset_user_password",
     "isolate_device", "unisolate_device", "run_antivirus_scan", "restrict_app_execution",
     "unrestrict_app_execution", "collect_investigation_package",
-    "block_indicator", "stop_and_quarantine_file",
+    "block_indicator", "stop_and_quarantine_file", "find_machines", "get_machine_action",
   ].sort());
   assert.equal(listTools("identity").length, 4);
-  assert.equal(listTools("devices").length, 8);
-  for (const name of ["block_indicator", "stop_and_quarantine_file"]) {
+  assert.equal(listTools("devices").length, 10);
+  for (const name of ["block_indicator", "stop_and_quarantine_file", "find_machines", "get_machine_action"]) {
     assert.equal(getTool(name, "identity"), undefined);
     assert.ok(getTool(name, "devices"));
     assert.equal(getTool(name).inputSchema.additionalProperties, false);
@@ -223,16 +223,19 @@ for (const [name, args, resource, status] of [
 }
 
 test("existing device and identity action payloads remain unchanged", async (t) => {
-  const requests = mockApi(t, {}, 204);
+  const requests = mockApi(t, { id: "isolate-1", status: "Pending", type: "Isolate", machineId: "machine-1" }, 201);
   const isolated = await invoke("isolate_device", { machineId: "machine-1", incidentId: "SOC-123" });
-  assert.equal(isolated.result, "SUCCESS");
+  assert.equal(isolated.result, "REQUESTED");
+  assert.equal(isolated.machineActionId, "isolate-1");
   assert.equal(requests[0].url.pathname, "/api/machines/machine-1/isolate");
   assert.equal(requests[0].body.IsolationType, "Full");
+  t.mock.restoreAll();
+  const identityRequests = mockApi(t, {}, 204);
   const blocked = await invoke("block_user", { userId: "analyst@example.com", incidentId: "SOC-123" });
   assert.equal(blocked.result, "SUCCESS");
-  assert.equal(requests[1].url.origin, "https://graph.microsoft.com");
-  assert.equal(requests[1].method, "PATCH");
-  assert.deepEqual(requests[1].body, { accountEnabled: false });
+  assert.equal(identityRequests[0].url.origin, "https://graph.microsoft.com");
+  assert.equal(identityRequests[0].method, "PATCH");
+  assert.deepEqual(identityRequests[0].body, { accountEnabled: false });
 });
 
 test("HTTP MCP routes both new tools only through the existing Defender endpoint", async (t) => {
@@ -267,10 +270,10 @@ test("HTTP MCP routes both new tools only through the existing Defender endpoint
   }
 
   const health = await (await clientFetch(`${base}/health`)).json();
-  assert.equal(health.totalTools, 12);
+  assert.equal(health.totalTools, 14);
   assert.equal((await rpc("devices", "initialize")).result.protocolVersion, "2025-03-26");
   assert.equal((await rpc("identity", "tools/list")).result.tools.length, 4);
-  assert.equal((await rpc("devices", "tools/list")).result.tools.length, 8);
+  assert.equal((await rpc("devices", "tools/list")).result.tools.length, 10);
   const indicator = await rpc("devices", "tools/call", { name: "block_indicator", arguments: indicatorArgs });
   assert.equal(JSON.parse(indicator.result.content[0].text).result, "SUBMITTED");
   const quarantine = await rpc("devices", "tools/call", { name: "stop_and_quarantine_file", arguments: quarantineArgs });

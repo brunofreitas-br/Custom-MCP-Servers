@@ -3,7 +3,8 @@ import cors from 'cors';
 import { registerAllTools } from './tools/index.js';
 import { listTools, getTool } from './toolRegistry.js';
 import { userTokenStore } from './apiClient.js';
-import { caseManagementEnabled, CaseEnrichmentError } from './caseManagement.js';
+import { caseManagementEnabled } from './caseManagement.js';
+import { toolErrorDetails } from './toolErrors.js';
 
 const PORT = Number(process.env.PORT) || 3000;
 const SERVER_NAME = 'sentinel-triage-proxy';
@@ -95,16 +96,13 @@ async function handleMessage(msg: JsonRpcRequest): Promise<JsonRpcResponse | nul
           },
         };
       } catch (err: unknown) {
-        const errMsg = err instanceof Error ? err.message : String(err);
         return {
           jsonrpc: '2.0',
           id: msg.id,
           result: {
             content: [{
               type: 'text',
-              text: err instanceof CaseEnrichmentError
-                ? JSON.stringify({ error: errMsg, partialResult: err.partialResult }, null, 2)
-                : `Error: ${errMsg}`,
+              text: JSON.stringify(toolErrorDetails(err, toolName, toolArgs), null, 2),
             }],
             isError: true,
           },
@@ -170,6 +168,14 @@ app.post('/mcp', async (req, res) => {
       return;
     }
     res.json(result);
+  });
+});
+
+app.use((_req, res) => {
+  res.status(404).json({
+    error: 'MCP_ENDPOINT_NOT_FOUND',
+    message: 'Use POST /mcp for MCP JSON-RPC. No Graph request was made.',
+    expectedEndpoints: ['/mcp'],
   });
 });
 

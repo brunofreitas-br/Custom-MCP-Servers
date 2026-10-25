@@ -1,4 +1,4 @@
-import { graphGet, graphGetNextPage, graphPatch, graphPatchResponse, GraphHttpError } from './apiClient.js';
+import { graphGet, graphGetNextPage, graphPatch, graphPatchResponse, graphErrorDiagnostics, GraphHttpError } from './apiClient.js';
 import type { UpdateProperty } from './updateValidation.js';
 
 export const CASES_PATH = '/security/caseManagement/cases';
@@ -18,6 +18,19 @@ interface Collection extends Record<string, unknown> {
 
 class CaseNotFoundError extends Error {}
 class LegacyCompatibilityError extends Error {}
+
+export class CaseFallbackError extends Error {
+  constructor(
+    public readonly operation: string,
+    public readonly reason: string,
+    public readonly primaryError: Error,
+    public readonly fallbackError: unknown,
+  ) {
+    const message = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
+    super(`Cases path failed: ${primaryError.message}. Incident fallback failed: ${message}`, { cause: fallbackError });
+    this.name = 'CaseFallbackError';
+  }
+}
 
 export class CaseEnrichmentError extends Error {
   constructor(message: string, public readonly partialResult: Record<string, unknown>, cause: unknown) {
@@ -163,11 +176,10 @@ async function withIncidentFallback(
   console.warn(`Case Management fallback: ${operation} (${reason})`);
   try {
     return metadata(requireRecord(await legacy(), 'Incident response'), 'incidents', {
-      fallback: { reason, primaryError: primaryError.message },
+      fallback: { reason, primaryError: primaryError.message, diagnostics: graphErrorDiagnostics(primaryError) },
     });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`Cases path failed: ${primaryError.message}. Incident fallback failed: ${message}`, { cause: error });
+    throw new CaseFallbackError(operation, reason, primaryError, error);
   }
 }
 

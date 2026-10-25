@@ -1,6 +1,7 @@
 import { registerTool } from "../toolRegistry.js";
 import { apiRequest } from "../apiClient.js";
 import { requireHex, requireString, validateArguments } from "../validation.js";
+import { machineActionResult } from "../machineActions.js";
 
 // ── Isolate Device ──────────────────────────────────────────────────────────
 registerTool({
@@ -11,7 +12,7 @@ registerTool({
   inputSchema: {
     type: "object",
     properties: {
-      machineId: { type: "string", description: "Defender for Endpoint machine ID" },
+      machineId: { type: "string", minLength: 1, description: "MDE machine ID; resolve a hostname using find_machines first, never use an Entra device ID" },
       incidentId: { type: "string", description: "Incident ID for audit trail" },
       isolationType: {
         type: "string",
@@ -20,17 +21,20 @@ registerTool({
       },
     },
     required: ["machineId", "incidentId"],
+    additionalProperties: false,
   },
   handler: async (args, token) => {
-    const machineId = args.machineId as string;
-    const incidentId = args.incidentId as string;
-    const isolationType = (args.isolationType as string) || "Full";
+    validateArguments(args, ["machineId", "incidentId", "isolationType"]);
+    const machineId = requireString(args.machineId, "machineId");
+    const incidentId = requireString(args.incidentId, "incidentId");
+    const isolationType = args.isolationType ?? "Full";
+    if (isolationType !== "Full" && isolationType !== "Selective") throw new Error("isolationType must be Full or Selective");
     const ts = new Date().toISOString();
 
-    await apiRequest({
+    const machineAction = await apiRequest({
       base: "defender",
       method: "POST",
-      path: `/machines/${machineId}/isolate`,
+      path: `/machines/${encodeURIComponent(machineId)}/isolate`,
       body: {
         Comment: `Isolated by SOC — Incident ${incidentId} — ${ts}`,
         IsolationType: isolationType,
@@ -44,7 +48,7 @@ registerTool({
       incidentId,
       isolationType,
       timestamp: ts,
-      result: "SUCCESS",
+      ...machineActionResult(machineAction, { machineId, type: "Isolate" }),
       message: `Device ${machineId} isolation requested (${isolationType}).`,
       rollback: "Use unisolate_device with the same machineId.",
     };
@@ -59,20 +63,22 @@ registerTool({
   inputSchema: {
     type: "object",
     properties: {
-      machineId: { type: "string", description: "Defender for Endpoint machine ID" },
+      machineId: { type: "string", minLength: 1, description: "MDE machine ID; resolve a hostname using find_machines first" },
       incidentId: { type: "string", description: "Incident ID for audit trail" },
     },
     required: ["machineId", "incidentId"],
+    additionalProperties: false,
   },
   handler: async (args, token) => {
-    const machineId = args.machineId as string;
-    const incidentId = args.incidentId as string;
+    validateArguments(args, ["machineId", "incidentId"]);
+    const machineId = requireString(args.machineId, "machineId");
+    const incidentId = requireString(args.incidentId, "incidentId");
     const ts = new Date().toISOString();
 
-    await apiRequest({
+    const machineAction = await apiRequest({
       base: "defender",
       method: "POST",
-      path: `/machines/${machineId}/unisolate`,
+      path: `/machines/${encodeURIComponent(machineId)}/unisolate`,
       body: { Comment: `Released from isolation — Incident ${incidentId} — ${ts}` },
       token,
     });
@@ -82,8 +88,8 @@ registerTool({
       target: machineId,
       incidentId,
       timestamp: ts,
-      result: "SUCCESS",
-      message: `Device ${machineId} released from isolation.`,
+      ...machineActionResult(machineAction, { machineId, type: "Unisolate" }),
+      message: `Release from isolation submitted for ${machineId}. Check the returned action status for completion.`,
     };
   },
 });
@@ -92,11 +98,11 @@ registerTool({
 registerTool({
   name: "run_antivirus_scan",
   collection: "devices",
-  description: "Triggers a Quick or Full antivirus scan on a device via Defender for Endpoint.",
+  description: "Request a Quick or Full Defender antivirus scan on a verified MDE machine ID. Resolve hostnames using find_machines first. Returns machineActionId/status; use get_machine_action to track completion instead of resubmitting. Requires Machine.Scan",
   inputSchema: {
     type: "object",
     properties: {
-      machineId: { type: "string", description: "Defender for Endpoint machine ID" },
+      machineId: { type: "string", minLength: 1, description: "MDE machine ID from alert mdeDeviceId or find_machines, not an Entra device ID or hostname" },
       incidentId: { type: "string", description: "Incident ID for audit trail" },
       scanType: {
         type: "string",
@@ -105,17 +111,20 @@ registerTool({
       },
     },
     required: ["machineId", "incidentId"],
+    additionalProperties: false,
   },
   handler: async (args, token) => {
-    const machineId = args.machineId as string;
-    const incidentId = args.incidentId as string;
-    const scanType = (args.scanType as string) || "Full";
+    validateArguments(args, ["machineId", "incidentId", "scanType"]);
+    const machineId = requireString(args.machineId, "machineId");
+    const incidentId = requireString(args.incidentId, "incidentId");
+    const scanType = args.scanType ?? "Full";
+    if (scanType !== "Quick" && scanType !== "Full") throw new Error("scanType must be Quick or Full");
     const ts = new Date().toISOString();
 
-    await apiRequest({
+    const machineAction = await apiRequest({
       base: "defender",
       method: "POST",
-      path: `/machines/${machineId}/runAntiVirusScan`,
+      path: `/machines/${encodeURIComponent(machineId)}/runAntiVirusScan`,
       body: {
         Comment: `AV scan — Incident ${incidentId} — ${ts}`,
         ScanType: scanType,
@@ -129,8 +138,8 @@ registerTool({
       incidentId,
       scanType,
       timestamp: ts,
-      result: "SUCCESS",
-      message: `${scanType} AV scan initiated on device ${machineId}.`,
+      ...machineActionResult(machineAction, { machineId, type: "RunAntiVirusScan" }),
+      message: `${scanType} AV scan request submitted for ${machineId}. Check the returned action status for completion.`,
     };
   },
 });
@@ -144,20 +153,22 @@ registerTool({
   inputSchema: {
     type: "object",
     properties: {
-      machineId: { type: "string", description: "Defender for Endpoint machine ID" },
+      machineId: { type: "string", minLength: 1, description: "MDE machine ID; resolve a hostname using find_machines first" },
       incidentId: { type: "string", description: "Incident ID for audit trail" },
     },
     required: ["machineId", "incidentId"],
+    additionalProperties: false,
   },
   handler: async (args, token) => {
-    const machineId = args.machineId as string;
-    const incidentId = args.incidentId as string;
+    validateArguments(args, ["machineId", "incidentId"]);
+    const machineId = requireString(args.machineId, "machineId");
+    const incidentId = requireString(args.incidentId, "incidentId");
     const ts = new Date().toISOString();
 
-    await apiRequest({
+    const machineAction = await apiRequest({
       base: "defender",
       method: "POST",
-      path: `/machines/${machineId}/restrictCodeExecution`,
+      path: `/machines/${encodeURIComponent(machineId)}/restrictCodeExecution`,
       body: { Comment: `App restriction — Incident ${incidentId} — ${ts}` },
       token,
     });
@@ -167,8 +178,8 @@ registerTool({
       target: machineId,
       incidentId,
       timestamp: ts,
-      result: "SUCCESS",
-      message: `App execution restricted on device ${machineId}.`,
+      ...machineActionResult(machineAction, { machineId, type: "RestrictCodeExecution" }),
+      message: `App restriction submitted for ${machineId}. Check the returned action status for completion.`,
       rollback: "Use unrestrict_app_execution with the same machineId.",
     };
   },
@@ -182,20 +193,22 @@ registerTool({
   inputSchema: {
     type: "object",
     properties: {
-      machineId: { type: "string", description: "Defender for Endpoint machine ID" },
+      machineId: { type: "string", minLength: 1, description: "MDE machine ID; resolve a hostname using find_machines first" },
       incidentId: { type: "string", description: "Incident ID for audit trail" },
     },
     required: ["machineId", "incidentId"],
+    additionalProperties: false,
   },
   handler: async (args, token) => {
-    const machineId = args.machineId as string;
-    const incidentId = args.incidentId as string;
+    validateArguments(args, ["machineId", "incidentId"]);
+    const machineId = requireString(args.machineId, "machineId");
+    const incidentId = requireString(args.incidentId, "incidentId");
     const ts = new Date().toISOString();
 
-    await apiRequest({
+    const machineAction = await apiRequest({
       base: "defender",
       method: "POST",
-      path: `/machines/${machineId}/unrestrictCodeExecution`,
+      path: `/machines/${encodeURIComponent(machineId)}/unrestrictCodeExecution`,
       body: { Comment: `Restriction removed — Incident ${incidentId} — ${ts}` },
       token,
     });
@@ -205,8 +218,8 @@ registerTool({
       target: machineId,
       incidentId,
       timestamp: ts,
-      result: "SUCCESS",
-      message: `App execution restriction removed from device ${machineId}.`,
+      ...machineActionResult(machineAction, { machineId, type: "UnrestrictCodeExecution" }),
+      message: `App restriction removal submitted for ${machineId}. Check the returned action status for completion.`,
     };
   },
 });
@@ -220,20 +233,22 @@ registerTool({
   inputSchema: {
     type: "object",
     properties: {
-      machineId: { type: "string", description: "Defender for Endpoint machine ID" },
+      machineId: { type: "string", minLength: 1, description: "MDE machine ID; resolve a hostname using find_machines first" },
       incidentId: { type: "string", description: "Incident ID for audit trail" },
     },
     required: ["machineId", "incidentId"],
+    additionalProperties: false,
   },
   handler: async (args, token) => {
-    const machineId = args.machineId as string;
-    const incidentId = args.incidentId as string;
+    validateArguments(args, ["machineId", "incidentId"]);
+    const machineId = requireString(args.machineId, "machineId");
+    const incidentId = requireString(args.incidentId, "incidentId");
     const ts = new Date().toISOString();
 
-    await apiRequest({
+    const machineAction = await apiRequest({
       base: "defender",
       method: "POST",
-      path: `/machines/${machineId}/collectInvestigationPackage`,
+      path: `/machines/${encodeURIComponent(machineId)}/collectInvestigationPackage`,
       body: { Comment: `Evidence collection — Incident ${incidentId} — ${ts}` },
       token,
     });
@@ -243,7 +258,7 @@ registerTool({
       target: machineId,
       incidentId,
       timestamp: ts,
-      result: "SUCCESS",
+      ...machineActionResult(machineAction, { machineId, type: "CollectInvestigationPackage" }),
       message: `Investigation package requested for device ${machineId}. Available in Defender portal when ready.`,
     };
   },
@@ -283,11 +298,6 @@ registerTool({
       },
       token,
     });
-    if (typeof machineAction !== "object" || machineAction === null ||
-        !("id" in machineAction) || typeof machineAction.id !== "string" || machineAction.id.trim().length === 0 ||
-        !("status" in machineAction) || typeof machineAction.status !== "string" || machineAction.status.trim().length === 0) {
-      throw new Error("Defender returned an invalid machine action response. Check the Action center before retrying.");
-    }
 
     return {
       action: "stop_and_quarantine_file",
@@ -295,9 +305,8 @@ registerTool({
       sha1,
       incidentId,
       timestamp,
-      result: "REQUESTED",
+      ...machineActionResult(machineAction, { machineId, type: "StopAndQuarantineFile" }),
       message: "Stop and quarantine requested. Track the returned machine action in Defender Action center; completion is not implied.",
-      machineAction,
     };
   },
 });

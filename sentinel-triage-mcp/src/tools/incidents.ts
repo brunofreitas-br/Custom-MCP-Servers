@@ -86,7 +86,7 @@ export function registerIncidentTools() {
 
   registerTool({
     name: 'UpdateIncident',
-    description: 'Update or close an incident using Cases first, with v1.0 incidents fallback on no match or 404. Legacy-only fields are sent as one complete legacy PATCH. Cases 202 means accepted, not completed, and is never retried through incidents. Requires CaseManagement.ReadWrite.All and SecurityIncident.ReadWrite.All for fallback',
+    description: 'Update a verified Incident ID, never an unverified Case ID. Cases-first; legacy-only fields such as customTags/summary route the complete PATCH to v1.0 incidents. Do not drop fields or change tools to bypass errors. Stop on 401/403; fallback is MCP-managed. Cases 202 is accepted, not completed, and never replayed. Requires delegated CaseManagement.ReadWrite.All and SecurityIncident.ReadWrite.All for fallback',
     inputSchema: {
       type: 'object',
       properties: {

@@ -103,7 +103,7 @@ export function registerCaseTools(): void {
   });
   registerTool({
     name: 'UpdateCase',
-    description: 'Update a case by Case ID using Microsoft Graph beta. Use an exact status displayName from ListCaseStatuses. Incident updates may return ACCEPTED (202), not completion; accepted writes are never repeated. Generic cases support displayName, status and assignedTo. Requires CaseManagement.ReadWrite.All',
+    description: 'Update a verified Case ID using Microsoft Graph beta. No customTags/summary support; do not drop requested fields or reuse a Case ID as an Incident ID. Stop on 401/403 instead of trying other routes. Use status displayNames from ListCaseStatuses. ACCEPTED (202) is pending synchronization, never a reason to repeat a write. Requires CaseManagement.ReadWrite.All',
     inputSchema: {
       type: 'object',
       properties: { caseId: { type: 'string', minLength: 1 }, ...caseUpdateProperties },

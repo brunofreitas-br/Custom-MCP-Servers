@@ -16,6 +16,13 @@ export function requireString(value: unknown, name: string): string {
   return value;
 }
 
+export function requireRecord(value: unknown, name: string): Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error(`${name} must be an object`);
+  }
+  return { ...value };
+}
+
 export function requireHex(value: unknown, length: number, name: string): string {
   const text = requireString(value, name);
   if (!new RegExp(`^[a-fA-F0-9]{${length}}$`).test(text)) {

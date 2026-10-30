@@ -31,6 +31,7 @@ This repo provides custom MCP servers that call the **same underlying APIs** (Mi
 |--------|-------------|-------|--------|
 | [sentinel-triage-mcp](./sentinel-triage-mcp/) | Cases-first triage, case/incident/alert updates & threat hunting via Microsoft Graph Security API | 14 | Stable v1.0 APIs + Cases beta |
 | [response-actions-mcp](./response-actions-mcp/) | SOC response actions, hostname lookup, action tracking, indicators & file quarantine | 14 | ✅ Production |
+| [graph-audit-mcp](./graph-audit-mcp/) | Read-only Microsoft Graph sign-in, directory audit, and risky-user investigations | 6 | ✅ Graph v1.0 |
 
 ### sentinel-triage-mcp
 
@@ -55,15 +56,13 @@ Indicator blocking supports URLs, domains, IP addresses, file hashes, and certif
 
 `find_machines` resolves exact hostnames/FQDNs to accessible MDE devices without selecting an ambiguous target. Device actions now return their actual asynchronous `machineActionId`/status, and `get_machine_action` reads completion without replaying the action. **Compatibility:** device-action `result` is no longer unconditional `SUCCESS`; consumers must handle pending/final/unknown states. Action tracking requires delegated `Machine.ReadWrite`; lookup alone can use `Machine.Read`.
 
-Both servers provide structured API diagnostics with HTTP context and correlation IDs, and clear JSON 404 responses for incorrect MCP routes. These help distinguish permission failures, missing resources, malformed connector URLs, and unconfirmed write outcomes without bypassing authorization or confusing Case/Incident/device IDs. See each server's guide for agent-instruction snippets and error-envelope migration.
+All servers provide structured API diagnostics with HTTP context and correlation IDs, and clear JSON 404 responses for incorrect MCP routes. These help distinguish permission failures, missing resources, malformed connector URLs, and unconfirmed write outcomes without bypassing authorization or confusing Case/Incident/device IDs. See each server's guide for agent-instruction snippets and error-envelope migration.
 
-## Planned Servers
+### graph-audit-mcp
 
-As Microsoft evolves its MCP support, gaps may emerge in other areas. Potential future additions:
+Read-only identity audit investigation through Microsoft Graph v1.0. It exposes six tools for sign-ins, directory audits, and risky users. List operations use typed allowlisted filters and bounded pagination; continuation links are validated before the delegated token is forwarded.
 
-| Server | Description | Status |
-|--------|-------------|--------|
-| `entra-identity-mcp` | Identity investigation — risky users, sign-in logs, conditional access | 💡 Idea |
+Requires delegated `AuditLog.Read.All` for sign-in and directory audit data, and `IdentityRiskyUser.Read.All` for risky users. Like the other servers, it is stateless and holds no credentials.
 
 ## Architecture
 
